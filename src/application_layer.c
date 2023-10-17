@@ -16,10 +16,35 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
     ll.timeout = timeout;
     
     if(llopen(ll) == -1) {
-    	printf("llopen error");
-    	exit(1);
+        printf("llopen error");
+        exit(1);
     }
-    
+
+    if((int idfk = open(filename, O_RDONLY)) < 0) {
+        printf("fopen error");
+        exit(1);
+    }
+
+    int bufSize = MAX_PAYLOAD_SIZE - 1;
+    unsigned char buf[bufSize + 1];
+
+    int i = 1;
+
+    while(i > 0) {
+        i = read(idfk, buf + 1, bufSize);
+        if(i < 0) {
+            printf("fread error");
+            break;
+        } else if(i > 0) {
+            buf[0] = 1;
+            if(llwrite(buf, i) < 0) {
+                printf("llwrite error");
+                exit(1)
+            }
+        }
+    //not working, not done, finish later
+        
+    }
     
     
     
