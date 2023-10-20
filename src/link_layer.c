@@ -183,47 +183,49 @@ int llopen(LinkLayer connectionParameters)
 ////////////////////////////////////////////////
 // LLWRITE
 ////////////////////////////////////////////////
-int llwrite(const unsigned char *buf, int bufSize)
+int llwrite(const unsigned char *buf, int bufSize, int fd)
 {
     // TODO
-	unsigned char frame[bufSize];
-    frame[0] = FLAG;
+	unsigned char frame[2 * bufSize + 6];
+	//Header
+    frame[0] = FLAG_RCV;
     frame[1] = A_TX;
     frame[2] = C;
     frame[3] = frame[1] ^ frame[2];
+	
+	//Calculate BCC2
 	unsigned char BCC2 = buf[0];
-
 	for(int i = 1; i < bufSize; i++){
 		BCC2 = BCC2 ^ buf[i];
 	}
 
-	int helper = 4;
-
+	int frameIndex = 4;
+	
 	for(int i = 0; i < bufSize; i++){
-		if(buf[i] == 0x7e){
-			frame[helper] == 0x7d;
-			helper++;
-			frame[helper] == 0x5e;
+	
 
-		} else if(buf[i] == 0x7d){
-			frame[helper] == 0x7d;
-			helper++;
-			frame[helper] == 0x5d;
-
+		//Byte stuffing
+		if(buf[i] == FLAG_RCV || buf[i] == ESC){
+			frame[frameIndex++] = ESC;
+			frame[frameIndex++] = buf[i] ^ 0x20;
 		} else {
-			frame[helper] == buf[i];
+			frame[frameIndex++] = buf[i];
 		}
 
-		helper++;
 	}
 
-	frame[helper] = BCC2;
-	frame[helper+1] = FLAG;
 	
 	
-    
-    
-    
+	frame[frameIndex++] = BCC2;
+	frame[frameIndex++] = FLAG_RCV;
+
+	
+	
+
+
+	
+	
+
 
     return 0;
 }
