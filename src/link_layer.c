@@ -186,6 +186,44 @@ int llopen(LinkLayer connectionParameters)
 int llwrite(const unsigned char *buf, int bufSize)
 {
     // TODO
+	unsigned char frame[bufSize];
+    frame[0] = FLAG;
+    frame[1] = A_TX;
+    frame[2] = C;
+    frame[3] = frame[1] ^ frame[2];
+	unsigned char BCC2 = buf[0];
+
+	for(int i = 1; i < bufSize; i++){
+		BCC2 = BCC2 ^ buf[i];
+	}
+
+	int helper = 4;
+
+	for(int i = 0; i < bufSize; i++){
+		if(buf[i] == 0x7e){
+			frame[helper] == 0x7d;
+			helper++;
+			frame[helper] == 0x5e;
+
+		} else if(buf[i] == 0x7d){
+			frame[helper] == 0x7d;
+			helper++;
+			frame[helper] == 0x5d;
+
+		} else {
+			frame[helper] == buf[i];
+		}
+
+		helper++;
+	}
+
+	frame[helper] = BCC2;
+	frame[helper+1] = FLAG;
+	
+	
+    
+    
+    
 
     return 0;
 }
