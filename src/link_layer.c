@@ -232,7 +232,7 @@ int llwrite(const unsigned char *buf, int bufSize, int fd)
 	int check_OK = FALSE;
 	int bytes_sent = 0;
 	
-	while(alarmCount < 4 state != STOP){
+	while(alarmCount < 4 state &&  state != STOP){
 
 		state = START;
 		bytes_sent = write(fd, frame, frameIndex + 1);
