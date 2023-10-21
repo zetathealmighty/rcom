@@ -29,6 +29,14 @@
 #define C_SET 0x03;
 #define C_UA 0x07;
 #define C_DISC 0x0B;
+#define C_I 0x00;
+#define C_RR 0x85;
+#define C_REJ 0x01;
+#define BCC_RR A_TX ^ C_RR;
+#define BCC_REJ A_TX ^ C_REJ;
+#define MAX_RETR 3;
+
+
 #define ESC 0x7D;
 
 typedef enum {
@@ -190,7 +198,7 @@ int llwrite(const unsigned char *buf, int bufSize, int fd)
 	//Header
     frame[0] = FLAG_RCV;
     frame[1] = A_TX;
-    frame[2] = C;
+    frame[2] = C_I;
     frame[3] = frame[1] ^ frame[2];
 	
 	//Calculate BCC2
@@ -213,14 +221,88 @@ int llwrite(const unsigned char *buf, int bufSize, int fd)
 		}
 
 	}
+	
 
 	
 	
 	frame[frameIndex++] = BCC2;
 	frame[frameIndex++] = FLAG_RCV;
 
+	int bytes_RR_received = 0;
+	int check_OK = FALSE;
+	int bytes_sent = 0;
 	
-	
+	while(alarmCount < 4 state != STOP){
+
+		state = START;
+		bytes_sent = write(fd, frame, frameIndex + 1);
+		printf("Bytes sent: %d\n", bytes_sent);
+
+		//Wait until all bytes have been wrtien
+		sleep(1);
+
+		alarm(3);
+		alarmTriggered = FALSE;
+
+		while(state != STOP){
+			bytes_RR_received = read(fd, &curr, 1);
+			if(bytes_RR_received > 1){
+				switch(state){
+					case START:
+						if(curr == FLAG_RCV) state = FLAG;
+						break;
+					case FLAG:
+						if(curr == A_TX){
+							state = A;
+						} else if(curr == FLAG_RCV){
+							state = FLAG;
+						} else {
+							state = START;
+						}
+						break;
+					case A:
+						if(curr == C_RR){
+							state = C;
+						}else if( curr == FLAG_RCV){
+							state = FLAG;
+						} else {
+							state = START;
+							
+						}
+						break;
+					case C:
+						if(curr == BCC_RR){
+							state = BCC1;
+						} else if(curr == FLAG_RCV){
+							state = FLAG;
+						} else {
+							state = START;
+						}
+						break;
+					case BCC1:
+						if(curr == FLAG_RCV){
+							state = STOP;
+							check_OK = TRUE;
+							printf("RR received\n");
+						} else {
+							state = START;
+						}
+						break;
+				}
+			}
+		}
+
+		printf("Bytes received: %d\n", bytes_RR_received);
+
+		if(check_OK == FALSE){
+			printf("Error receiving RR\n");
+			exit(1);
+		}
+
+		return bytes_sent;
+
+
+	}
 
 
 	
