@@ -215,9 +215,8 @@ int llwrite(const unsigned char *buf, int bufSize)
 		if(buf[i] == FLAG_RCV || buf[i] == ESC){
 			frame[frameIndex++] = ESC;
 			frame[frameIndex++] = buf[i] ^ 0x20;
-		} else {
-			frame[frameIndex++] = buf[i];
 		}
+			frame[frameIndex++] = buf[i];
 	}
 
 	frame[frameIndex++] = BCC2;
@@ -315,9 +314,90 @@ int llwrite(const unsigned char *buf, int bufSize)
 ////////////////////////////////////////////////
 int llread(unsigned char *packet)
 {
-    // TODO
+	llState state = START;
 
-    return 0;
+	unsigned char curr, save;
+	unsigned int where = 4;
+
+    while(state != STOP_ && alarmTriggered == FALSE){
+		if(read(fd, &curr, 1) > 1){
+			switch(state){
+				case START: {
+					if(curr == FLAG_RCV) state = FLAG;
+					break;
+				} case FLAG: {
+					if(curr == A_TX){
+						state = A;
+					} else if(curr == FLAG_RCV){
+						state = FLAG;
+					} else {
+						state = START;
+					}
+					break;
+				} case A: {
+					if(curr == C_I0 || curr == C_I1 || curr == C_DISC) {
+						state = C;
+						save = curr;
+					}else if(curr == FLAG_RCV){
+						state = FLAG;
+					} else {
+						state = START;
+					}
+					break;
+				} case C: {
+					if(curr == (save ^ A_TX)){
+						if(save == C_DISC) {
+							unsigned char frame[5] = {FLAG_RCV, A_RX, C_DISC, A_RX ^ C_DISC, FLAG_RCV};
+							write(fd, frame, 5);
+							return 0;
+						}
+						state = BCC1;
+					} else if(curr == FLAG_RCV){
+						state = FLAG;
+					} else {
+						state = START;
+					}
+					break;
+				} case BCC1: {
+					if(curr == ESC) {
+						read(fd, &curr, 1);
+						packet[where++] = curr | 0x20;
+					} else if(curr == FLAG_RCV) {
+						unsigned char bcc = packet[where - 1];
+						packet[--where] = '\0';
+
+						unsigned char cmp = packet[0];
+
+						for(int i = 1; i < where; i++) {
+							cmp ^= packet[i];
+						}
+
+						if(bcc == cmp) {
+							state = STOP_;
+							unsigned char which = (save == C_I0) ? C_RR1 : C_RR0;
+
+							unsigned char frame[5] = {FLAG_RCV, A_RX, which, A_RX ^ which, FLAG_RCV};
+							write(fd, frame, 5);
+
+							return where;
+						} else {
+							unsigned char which = (save == C_I0) ? C_REJ0 : C_REJ1;
+							unsigned char frame[5] = {FLAG_RCV, A_RX, which, A_RX ^ which, FLAG_RCV};
+							write(fd, frame, 5);
+
+							return -1;
+						}
+					} else {
+						packet[where++] = curr;
+					}
+					break;
+				} default: {
+					break;
+				}
+			}
+		}
+	}
+    return -1;
 }
 
 ////////////////////////////////////////////////
@@ -330,5 +410,53 @@ int llclose(int showStatistics)
 
 	(void) signal(SIGALRM, alarmHandler);
 
-    return 1;
+	while(attempts != 0 && state != STOP_) {
+		unsigned char frame[5] = {FLAG_RCV, A_TX, C_DISC, A_TX ^ C_DISC, FLAG_RCV};
+
+		write(fd, frame, 5);
+
+		alarm(timeout);
+		alarmTriggered = FALSE;
+
+		while(alarmTriggered == FALSE && state != STOP) {
+			if(read(fd, &curr, 1) > 0) {
+				switch(state) {
+					case START: {
+						if(curr == FLAG_RCV) state = FLAG;
+						break;
+					} case FLAG: {
+						if(curr == A_RX) state = A;
+						else if(curr != FLAG_RCV) state = START;
+						break;
+					} case A: {
+						if(curr == C_DISC) state = C;
+						else if(curr == FLAG_RCV) state = FLAG;
+						else state = START;
+						break;
+					} case C: {
+						if(curr == (A_RX ^ C_DISC)) state = BCC1;
+						else if(curr == FLAG_RCV) state = FLAG;
+						else state = START;
+						break;
+					} case BCC1: {
+						if(curr == FLAG_RCV) state = STOP_;
+						else state = START;
+						break;
+					} default: {
+						break;
+					}
+				}
+			} 
+		} attempts--;
+	}
+
+	if(state != STOP_) {
+		return -1;
+	}
+
+	unsigned char frame[5] = {FLAG_RCV, A_TX, C_UA, A_TX ^ C_UA, FLAG_RCV};
+
+	write(fd, frame, 5);
+
+	return close(fd);
 }

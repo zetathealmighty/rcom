@@ -14,13 +14,13 @@
 #include <termios.h>
 #include <unistd.h>
 
-unsigned char* controlPacket(int which, unsigned char* filename, long int len)  {
+unsigned char* controlPacket(int which, const char* filename, long int len)  {
 	const int len1 = (int) ceil(log2f((float)len) / 8.0);
     const int len2 = strlen(filename);
 
 	long int size = 3 + len1 + 2 + len2;
 
-	unsigned char* packet = (unsigned char*) malloc(len);
+	unsigned char* packet = (unsigned char*) malloc(size);
 
 	packet[0] = which;
 	packet[1] = 0;
@@ -42,7 +42,7 @@ unsigned char* controlPacket(int which, unsigned char* filename, long int len)  
 unsigned char* dataPacket(int which, unsigned char* data, int dataLen, int *packetLen) {
 	*packetLen = dataLen + 4;
 	
-	unsigned char* packet = (unsigned char*) malloc(packetLen);
+	unsigned char* packet = (unsigned char*) malloc(*packetLen);
 	
 	packet[0] = 1;
 	packet[1] = which;
@@ -57,14 +57,14 @@ unsigned char* dataPacket(int which, unsigned char* data, int dataLen, int *pack
 void applicationLayer(const char *serialPort, const char *role, int baudRate,
                       int nTries, int timeout, const char *filename)
 {
-    LinkLayer ll;
-    
-    printf(ll.serialPort, "%s", serialPort);
+    LinkLayer ll;    
     
     ll.role = strcmp(role, "rx") ? LlRx : LlTx;
     ll.baudRate = baudRate;
     ll.nRetransmissions = nTries;
     ll.timeout = timeout;
+
+	printf(ll.serialPort, "%s", serialPort);
 
     int fd = llopen(ll);
 
@@ -72,16 +72,12 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         printf("llopen error");
         exit(-1);
     }
-
-    int bufSize = MAX_PAYLOAD_SIZE - 1;
-    unsigned char buf[bufSize + 1];
-
     
     switch(ll.role) {
     	case LlRx: {
-			unsigned char packet[MAX_PAYLOAD_SIZE];
+			unsigned char* packet = (unsigned char*) malloc(MAX_PAYLOAD_SIZE);
 
-			if((llread(&packet)) < 0) {
+			if((llread(packet)) < 0) {
 				printf("rx llread control error\n");
 				exit(-1);
 			}
@@ -107,7 +103,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 			int readNow;
 
 			while(readAlr != fsize) {
-				while((readNow = llread(&packet)) < 0);
+				while((readNow = llread(packet)) < 0);
 				readAlr += readNow;
 
 				if(packet[0] != 3) {
@@ -135,7 +131,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
     		rewind(inFile);
 
 			unsigned char* startPacket = controlPacket(2, filename, fsize);
-            if(llwrite(&startPacket, fsize + 5) < 0) {
+            if(llwrite(startPacket, fsize + 5) < 0) {
                 printf("tx llwrite controlstart error\n");
                 exit(-1);
             }
@@ -151,7 +147,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 				int packetLen;
 				unsigned char* packet = dataPacket((int) which, buffer, readNow, &packetLen);
 
-				if(llwrite(&packet, packetLen) < 0) {
+				if(llwrite(packet, packetLen) < 0) {
 					printf("tx llwrite error\n");
 					exit(-1);
 				}
@@ -160,9 +156,9 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 				which = !which;
 			}
 
-			unsigned char endControl = controlPacket(3, filename, fsize);
+			unsigned char* endControl = controlPacket(3, filename, fsize);
 
-			if(llwrite(&endControl, fsize + 5) < 0) { 
+			if(llwrite(endControl, fsize + 5) < 0) { 
                 printf("tx llwrite controlend error \n");
                 exit(-1);
             }
