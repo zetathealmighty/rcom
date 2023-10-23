@@ -73,6 +73,9 @@ int llopen(LinkLayer connectionParameters)
 	
 	fd = open(connectionParameters.serialPort, O_RDWR | O_NOCTTY);
 	
+	printf("connection open\n");
+	fflush(stdout);
+	
 	if (fd < 0) {
         perror(connectionParameters.serialPort);
         exit(-1);
@@ -93,7 +96,7 @@ int llopen(LinkLayer connectionParameters)
     newtio.c_oflag = 0;
     newtio.c_lflag = 0;
     newtio.c_cc[VTIME] = 0;
-    newtio.c_cc[VMIN] = 1;
+    newtio.c_cc[VMIN] = 0;
     
     tcflush(fd, TCIOFLUSH);
     
@@ -106,6 +109,9 @@ int llopen(LinkLayer connectionParameters)
     timeout = connectionParameters.timeout;
     attempts = connectionParameters.nRetransmissions;
     
+    printf("shit already done before\n");
+	fflush(stdout);
+    
     switch(connectionParameters.role) {
     	case LlRx: {
     			while(state != STOP_) {
@@ -113,31 +119,45 @@ int llopen(LinkLayer connectionParameters)
     					switch(state) {
     						case START: {
     							if(curr == FLAG_RCV) state = FLAG;
+								printf("flag done\n");
+								fflush(stdout);
     							break;
     						} case FLAG: {
-    							if(curr == A_RX) state = A;
+    							if(curr == A_TX) state = A;
     							else if(curr != FLAG_RCV) state = START;
+    							printf("a done\n");
+								fflush(stdout);
     							break;
     						} case A: {
     							if(curr == C_SET) state = C;
     							else if(curr == FLAG_RCV) state = FLAG;
     							else state = START;
+    							printf("c done\n");
+								fflush(stdout);
     							break;
     						} case C: {
     							if(curr == (A_TX ^ C_SET)) state = BCC1;
     							else if(curr == FLAG_RCV) state = FLAG;
     							else state = START;
+    							printf("bcc done\n");
+								fflush(stdout);
     							break;
     						} case BCC1: {
     							if(curr == FLAG_RCV) state = STOP_;
     							else state = START;
+    							printf("all done\n");
+								fflush(stdout);
     							break;
     						} default: {
     							break;
     						}    						
     					}
     				}
-    			} unsigned char buf[5] = {FLAG, A_TX, C_UA, A_TX ^ C_UA, FLAG};
+    			} 
+    			printf("after state machine\n");
+				fflush(stdout);
+    			
+    			unsigned char buf[5] = {FLAG_RCV, A_RX, C_UA, A_RX ^ C_UA, FLAG_RCV};
     			write(fd, buf, 5);
 				break;
 				
@@ -145,7 +165,7 @@ int llopen(LinkLayer connectionParameters)
     		(void) signal(SIGALRM, alarmHandler);
     		
     		while(connectionParameters.nRetransmissions != 0 && state != STOP_) {
-    			unsigned char buf[5] = {FLAG, A_TX, C_SET, A_TX ^ C_SET, FLAG};
+    			unsigned char buf[5] = {FLAG_RCV, A_TX, C_SET, A_TX ^ C_SET, FLAG_RCV};
     			write(fd, buf, 5);
     			
     			alarm(connectionParameters.timeout);
@@ -156,31 +176,45 @@ int llopen(LinkLayer connectionParameters)
     					switch(state) {
     						case START: {
     							if(curr == FLAG_RCV) state = FLAG;
+    							printf("flag done\n");
+								fflush(stdout);
     							break;
     						} case FLAG: {
     							if(curr == A_RX) state = A;
     							else if(curr != FLAG_RCV) state = START;
+								printf("a done\n");
+								fflush(stdout);
     							break;
     						} case A: {
     							if(curr == C_UA) state = C;
     							else if(curr == FLAG_RCV) state = FLAG;
     							else state = START;
+    							printf("c done\n");
+								fflush(stdout);
     							break;
     						} case C: {
     							if(curr == (A_RX ^ C_UA)) state = BCC1;
     							else if(curr == FLAG_RCV) state = FLAG;
     							else state = START;
+    							printf("bcc done\n");
+								fflush(stdout);
     							break;
     						} case BCC1: {
     							if(curr == FLAG_RCV) state = STOP_;
     							else state = START;
+    							printf("all done\n");
+								fflush(stdout);
     							break;
     						} default: {
     							break;
     						}    						
     					}
     				}
-    			} connectionParameters.nRetransmissions--;
+    			} 
+    			printf("after state machine\n");
+				fflush(stdout);
+    			
+    			connectionParameters.nRetransmissions--;
     		} if(state != STOP_) return -1;
     		break;
     	} default: {
@@ -250,6 +284,8 @@ int llwrite(const unsigned char *buf, int bufSize)
 				switch(state){
 					case START: {
 						if(curr == FLAG_RCV) state = FLAG;
+						printf("flag done\n");
+						fflush(stdout);
 						break;
 					} case FLAG: {
 						if(curr == A_TX){
@@ -259,6 +295,8 @@ int llwrite(const unsigned char *buf, int bufSize)
 						} else {
 							state = START;
 						}
+						printf("a done\n");
+						fflush(stdout);
 						break;
 					} case A: {
 						if(curr == C_RR0 || curr == C_RR1 || curr == C_REJ0 || curr == C_REJ1 || curr == C_DISC){
@@ -269,6 +307,8 @@ int llwrite(const unsigned char *buf, int bufSize)
 						} else {
 							state = START;
 						}
+						printf("c done\n");
+						fflush(stdout);
 						break;
 					} case C: {
 						if(curr == (save ^ A_TX)){
@@ -278,6 +318,8 @@ int llwrite(const unsigned char *buf, int bufSize)
 						} else {
 							state = START;
 						}
+						printf("bcc done\n");
+						fflush(stdout);
 						break;
 					} case BCC1: {
 						if(curr == FLAG_RCV){
@@ -285,6 +327,8 @@ int llwrite(const unsigned char *buf, int bufSize)
 						} else {
 							state = START;
 						}
+						printf("all done\n");
+						fflush(stdout);
 						break;
 					} default: {
 						break;

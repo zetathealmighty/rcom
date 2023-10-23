@@ -59,14 +59,19 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 {
     LinkLayer ll;    
     
-    ll.role = strcmp(role, "rx") ? LlRx : LlTx;
+    strcpy(ll.serialPort, serialPort);
+    ll.role = strcmp(role, "rx") ? LlTx : LlRx;
     ll.baudRate = baudRate;
     ll.nRetransmissions = nTries;
     ll.timeout = timeout;
-
-	printf(ll.serialPort, "%s", serialPort);
+	
+	printf("before llopen\n");
+	fflush(stdout);
 
     int fd = llopen(ll);
+    
+    printf("after llopen\n");
+    fflush(stdout);
 
     if(fd == -1) {
         printf("llopen error");
@@ -78,7 +83,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 			unsigned char* packet = (unsigned char*) malloc(MAX_PAYLOAD_SIZE);
 
 			if((llread(packet)) < 0) {
-				printf("rx llread control error\n");
+				perror("rx llread control error\n");
 				exit(-1);
 			}
 
@@ -120,7 +125,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
     	} case LlTx: {
 			FILE* inFile = fopen(filename, "rb");
 		    if(inFile == NULL) {
-        		printf("tx fopen error\n");
+        		perror("tx fopen error\n");
         		exit(-1);
     		}
     		
@@ -132,23 +137,23 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
 			unsigned char* startPacket = controlPacket(2, filename, fsize);
             if(llwrite(startPacket, fsize + 5) < 0) {
-                printf("tx llwrite controlstart error\n");
+                perror("tx llwrite controlstart error\n");
                 exit(-1);
             }
-    		
+    		// error opening file, tries to send whole file at once for some reason
 			unsigned char which = FALSE;
 			unsigned char* buffer = (unsigned char*) malloc(MAX_PAYLOAD_SIZE);
 			
 			long int i = fsize;
 			
 			while(i != 0) {
-				int readNow = fread(buffer, sizeof(unsigned char), fsize, inFile);
+				int readNow = fread(buffer, sizeof(unsigned char), MAX_PAYLOAD_SIZE, inFile);
 				
 				int packetLen;
 				unsigned char* packet = dataPacket((int) which, buffer, readNow, &packetLen);
 
 				if(llwrite(packet, packetLen) < 0) {
-					printf("tx llwrite error\n");
+					perror("tx llwrite error\n");
 					exit(-1);
 				}
 
@@ -159,7 +164,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 			unsigned char* endControl = controlPacket(3, filename, fsize);
 
 			if(llwrite(endControl, fsize + 5) < 0) { 
-                printf("tx llwrite controlend error \n");
+                perror("tx llwrite controlend error \n");
                 exit(-1);
             }
 
