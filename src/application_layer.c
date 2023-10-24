@@ -20,7 +20,7 @@ unsigned char* controlPacket(int which, const char* filename, long int len, int*
 
 	*size = 3 + len1 + 2 + len2;
 	
-	printf("controlpacket size is %i\n", *size);
+	printf("controlpacket size is %i\nfilename is %s\n", *size, filename);
 	fflush(stdout);
 
 	unsigned char* packet = (unsigned char*) malloc(*size);
@@ -114,7 +114,10 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
 			memcpy(name, packet + 3 + nameBytes + 2, nameBytes);
 			
-			FILE* outFile = fopen((char *) name, "wb+");
+			printf("filename %s\n", name);
+			fflush(stdout);
+			
+			FILE* outFile = fopen(filename, "wb+");
 
 			long int readAlr = 0;
 			int readNow;
@@ -139,8 +142,6 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 					fwrite(buffer, sizeof(unsigned char), readNow - 4, outFile);
 					free(buffer);
 				} else {
-					printf("found close\n");
-					fflush(stdout);
 					continue;
 				}
 			}
@@ -151,7 +152,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 			fflush(stdout);
 			
     		// for some reason this absolute idiot is closing the file and segfault?	
-    		// error creating the file?		
+    		// error creating the file? error freeing the memory? why is file still okay?
 			fclose(outFile);
 			
 			printf("closed\n");
@@ -237,3 +238,4 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
     }
    
 }
+
