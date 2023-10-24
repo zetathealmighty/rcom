@@ -61,6 +61,8 @@ int fd;
 
 void alarmHandler(int signal) {
     alarmTriggered = TRUE;
+    printf("alarm bitch\n");
+	fflush(stdout);
     alarmCount++;
 }
 
@@ -72,9 +74,6 @@ int llopen(LinkLayer connectionParameters)
 	llState state = START;
 	
 	fd = open(connectionParameters.serialPort, O_RDWR | O_NOCTTY);
-	
-	printf("connection open\n");
-	fflush(stdout);
 	
 	if (fd < 0) {
         perror(connectionParameters.serialPort);
@@ -109,9 +108,6 @@ int llopen(LinkLayer connectionParameters)
     timeout = connectionParameters.timeout;
     attempts = connectionParameters.nRetransmissions;
     
-    printf("shit already done before\n");
-	fflush(stdout);
-    
     switch(connectionParameters.role) {
     	case LlRx: {
     			while(state != STOP_) {
@@ -119,43 +115,31 @@ int llopen(LinkLayer connectionParameters)
     					switch(state) {
     						case START: {
     							if(curr == FLAG_RCV) state = FLAG;
-								printf("flag done\n");
-								fflush(stdout);
     							break;
     						} case FLAG: {
     							if(curr == A_TX) state = A;
     							else if(curr != FLAG_RCV) state = START;
-    							printf("a done\n");
-								fflush(stdout);
     							break;
     						} case A: {
     							if(curr == C_SET) state = C;
     							else if(curr == FLAG_RCV) state = FLAG;
     							else state = START;
-    							printf("c done\n");
-								fflush(stdout);
     							break;
     						} case C: {
     							if(curr == (A_TX ^ C_SET)) state = BCC1;
     							else if(curr == FLAG_RCV) state = FLAG;
     							else state = START;
-    							printf("bcc done\n");
-								fflush(stdout);
     							break;
     						} case BCC1: {
     							if(curr == FLAG_RCV) state = STOP_;
     							else state = START;
-    							printf("all done\n");
-								fflush(stdout);
     							break;
     						} default: {
     							break;
     						}    						
     					}
     				}
-    			} 
-    			printf("after state machine\n");
-				fflush(stdout);
+    			}
     			
     			unsigned char buf[5] = {FLAG_RCV, A_RX, C_UA, A_RX ^ C_UA, FLAG_RCV};
     			write(fd, buf, 5);
@@ -176,34 +160,24 @@ int llopen(LinkLayer connectionParameters)
     					switch(state) {
     						case START: {
     							if(curr == FLAG_RCV) state = FLAG;
-    							printf("flag done\n");
-								fflush(stdout);
     							break;
     						} case FLAG: {
     							if(curr == A_RX) state = A;
     							else if(curr != FLAG_RCV) state = START;
-								printf("a done\n");
-								fflush(stdout);
     							break;
     						} case A: {
     							if(curr == C_UA) state = C;
     							else if(curr == FLAG_RCV) state = FLAG;
     							else state = START;
-    							printf("c done\n");
-								fflush(stdout);
     							break;
     						} case C: {
     							if(curr == (A_RX ^ C_UA)) state = BCC1;
     							else if(curr == FLAG_RCV) state = FLAG;
     							else state = START;
-    							printf("bcc done\n");
-								fflush(stdout);
     							break;
     						} case BCC1: {
     							if(curr == FLAG_RCV) state = STOP_;
     							else state = START;
-    							printf("all done\n");
-								fflush(stdout);
     							break;
     						} default: {
     							break;
@@ -211,8 +185,6 @@ int llopen(LinkLayer connectionParameters)
     					}
     				}
     			} 
-    			printf("after state machine\n");
-				fflush(stdout);
     			
     			connectionParameters.nRetransmissions--;
     		} if(state != STOP_) return -1;
@@ -235,7 +207,12 @@ int llwrite(const unsigned char *buf, int bufSize)
     frame[1] = A_TX;
     frame[2] = trama ? C_I1 : C_I0;
     frame[3] = frame[1] ^ frame[2];
-	
+    
+    printf("sending trama %i\n", trama);
+	fflush(stdout);
+    
+    trama = !trama;
+
 	//Calculate BCC2
 	unsigned char BCC2 = buf[0];
 	for(int i = 1; i < bufSize; i++){
@@ -248,9 +225,8 @@ int llwrite(const unsigned char *buf, int bufSize)
 		//Byte stuffing
 		if(buf[i] == FLAG_RCV || buf[i] == ESC){
 			frame[frameIndex++] = ESC;
-			frame[frameIndex++] = buf[i] ^ 0x20;
 		}
-			frame[frameIndex++] = buf[i];
+		frame[frameIndex++] = buf[i];
 	}
 
 	frame[frameIndex++] = BCC2;
@@ -258,15 +234,16 @@ int llwrite(const unsigned char *buf, int bufSize)
 
 	frame = realloc(frame, frameIndex);
 
-	int bytes_RR_received = 0;
 	int check_OK = FALSE;
 	int bytes_sent = 0;
 	unsigned char curr = 0;
 	unsigned char save = 0;
+	int count = 0;
 
 	(void) signal(SIGALRM, alarmHandler);
 	
-	while(alarmCount < attempts){
+	while(count < attempts){
+		count++;
 
 		llState state = START;
 		bytes_sent = write(fd, frame, frameIndex + 1);
@@ -278,9 +255,8 @@ int llwrite(const unsigned char *buf, int bufSize)
 		alarm(timeout);
 		alarmTriggered = FALSE;	
 
-		while(state != STOP_ && alarmTriggered == FALSE){
-			bytes_RR_received = read(fd, &curr, 1);
-			if(bytes_RR_received > 1){
+		while(state != STOP_ && alarmTriggered == FALSE){		
+			if(read(fd, &curr, 1) > 0){
 				switch(state){
 					case START: {
 						if(curr == FLAG_RCV) state = FLAG;
@@ -288,7 +264,7 @@ int llwrite(const unsigned char *buf, int bufSize)
 						fflush(stdout);
 						break;
 					} case FLAG: {
-						if(curr == A_TX){
+						if(curr == A_RX){
 							state = A;
 						} else if(curr == FLAG_RCV){
 							state = FLAG;
@@ -300,6 +276,8 @@ int llwrite(const unsigned char *buf, int bufSize)
 						break;
 					} case A: {
 						if(curr == C_RR0 || curr == C_RR1 || curr == C_REJ0 || curr == C_REJ1 || curr == C_DISC){
+							printf("its %i\n", curr);
+							fflush(stdout);
 							state = C;
 							save = curr;
 						}else if(curr == FLAG_RCV){
@@ -311,7 +289,7 @@ int llwrite(const unsigned char *buf, int bufSize)
 						fflush(stdout);
 						break;
 					} case C: {
-						if(curr == (save ^ A_TX)){
+						if(curr == (save ^ A_RX)){
 							state = BCC1;
 						} else if(curr == FLAG_RCV){
 							state = FLAG;
@@ -336,15 +314,18 @@ int llwrite(const unsigned char *buf, int bufSize)
 				}
 			}
 		}
-		printf("Bytes received: %d\n", bytes_RR_received);
-
+		
+		
 		if(save == C_RR0 || save == C_RR1) {
 			check_OK = TRUE;
+			break;
 		} else if(save == C_REJ0 || save == C_REJ1) {
 			continue;
 		}
 	}
-
+	
+	free(frame);
+	
 	if(check_OK){
 		return bytes_sent;
 	} else {
@@ -364,7 +345,7 @@ int llread(unsigned char *packet)
 	unsigned int where = 4;
 
     while(state != STOP_ && alarmTriggered == FALSE){
-		if(read(fd, &curr, 1) > 1){
+		if(read(fd, &curr, 1) > 0){
 			switch(state){
 				case START: {
 					if(curr == FLAG_RCV) state = FLAG;
@@ -377,6 +358,8 @@ int llread(unsigned char *packet)
 					} else {
 						state = START;
 					}
+					printf("a done\n");
+					fflush(stdout);
 					break;
 				} case A: {
 					if(curr == C_I0 || curr == C_I1 || curr == C_DISC) {
@@ -387,10 +370,14 @@ int llread(unsigned char *packet)
 					} else {
 						state = START;
 					}
+					printf("c done\n");
+					fflush(stdout);
 					break;
 				} case C: {
 					if(curr == (save ^ A_TX)){
 						if(save == C_DISC) {
+							printf("disconnecting\n");
+							fflush(stdout);
 							unsigned char frame[5] = {FLAG_RCV, A_RX, C_DISC, A_RX ^ C_DISC, FLAG_RCV};
 							write(fd, frame, 5);
 							return 0;
@@ -401,14 +388,16 @@ int llread(unsigned char *packet)
 					} else {
 						state = START;
 					}
+					printf("bcc done\n");
+					fflush(stdout);
 					break;
 				} case BCC1: {
 					if(curr == ESC) {
 						read(fd, &curr, 1);
-						packet[where++] = curr | 0x20;
+						packet[where++] = curr;
 					} else if(curr == FLAG_RCV) {
-						unsigned char bcc = packet[where - 1];
-						packet[--where] = '\0';
+						unsigned char bcc = packet[--where];
+						packet[where] = '\0';
 
 						unsigned char cmp = packet[0];
 
@@ -418,16 +407,22 @@ int llread(unsigned char *packet)
 
 						if(bcc == cmp) {
 							state = STOP_;
-							unsigned char which = (save == C_I0) ? C_RR1 : C_RR0;
+							unsigned char which = (save == C_I0) ? C_RR0 : C_RR1;
 
 							unsigned char frame[5] = {FLAG_RCV, A_RX, which, A_RX ^ which, FLAG_RCV};
 							write(fd, frame, 5);
+							
+							printf("all done\n");
+							fflush(stdout);
 
 							return where;
 						} else {
 							unsigned char which = (save == C_I0) ? C_REJ0 : C_REJ1;
 							unsigned char frame[5] = {FLAG_RCV, A_RX, which, A_RX ^ which, FLAG_RCV};
 							write(fd, frame, 5);
+							
+							printf("rejected\n");
+							fflush(stdout);
 
 							return -1;
 						}
@@ -467,24 +462,34 @@ int llclose(int showStatistics)
 				switch(state) {
 					case START: {
 						if(curr == FLAG_RCV) state = FLAG;
+						printf("all done\n");
+						fflush(stdout);
 						break;
 					} case FLAG: {
 						if(curr == A_RX) state = A;
 						else if(curr != FLAG_RCV) state = START;
+						printf("a done\n");
+						fflush(stdout);
 						break;
 					} case A: {
 						if(curr == C_DISC) state = C;
 						else if(curr == FLAG_RCV) state = FLAG;
 						else state = START;
+						printf("c done\n");
+						fflush(stdout);
 						break;
 					} case C: {
 						if(curr == (A_RX ^ C_DISC)) state = BCC1;
 						else if(curr == FLAG_RCV) state = FLAG;
 						else state = START;
+						printf("bcc done\n");
+						fflush(stdout);
 						break;
 					} case BCC1: {
 						if(curr == FLAG_RCV) state = STOP_;
 						else state = START;
+						printf("all done\n");
+						fflush(stdout);
 						break;
 					} default: {
 						break;

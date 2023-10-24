@@ -14,13 +14,16 @@
 #include <termios.h>
 #include <unistd.h>
 
-unsigned char* controlPacket(int which, const char* filename, long int len)  {
+unsigned char* controlPacket(int which, const char* filename, long int len, int* size)  {
 	const int len1 = (int) ceil(log2f((float)len) / 8.0);
     const int len2 = strlen(filename);
 
-	long int size = 3 + len1 + 2 + len2;
+	*size = 3 + len1 + 2 + len2;
+	
+	printf("controlpacket size is %i\n", *size);
+	fflush(stdout);
 
-	unsigned char* packet = (unsigned char*) malloc(size);
+	unsigned char* packet = (unsigned char*) malloc(*size);
 
 	packet[0] = which;
 	packet[1] = 0;
@@ -74,22 +77,31 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
     fflush(stdout);
 
     if(fd == -1) {
-        printf("llopen error");
+        perror("llopen error");
         exit(-1);
     }
     
     switch(ll.role) {
     	case LlRx: {
 			unsigned char* packet = (unsigned char*) malloc(MAX_PAYLOAD_SIZE);
+			
+			printf("before llread\n");
+			fflush(stdout);
 
 			if((llread(packet)) < 0) {
 				perror("rx llread control error\n");
 				exit(-1);
 			}
+			
+			printf("after llread\n");
+			fflush(stdout);
 
 			long int fsize;
 			unsigned char fsizeBytes = packet[2];
 			unsigned char fsizeParse[fsizeBytes];
+			
+			printf("file len bytes is  %i\n", fsizeBytes);
+			fflush(stdout);
 
 			memcpy(fsizeParse, packet + 3, fsizeBytes);
 
@@ -109,7 +121,16 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
 			while(readAlr != fsize) {
 				while((readNow = llread(packet)) < 0);
-				readAlr += readNow;
+				printf("%i, %li vs %li\n", readNow, readAlr, fsize);
+				fflush(stdout);
+				
+				if(readNow == 0) {
+					printf("found close\n");
+					fflush(stdout);
+					break;
+				}
+				
+				readAlr += readNow - 8;
 
 				if(packet[0] != 3) {
 					unsigned char *buffer = (unsigned char*) malloc(readNow);
@@ -117,9 +138,24 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
 					fwrite(buffer, sizeof(unsigned char), readNow - 4, outFile);
 					free(buffer);
+				} else {
+					printf("found close\n");
+					fflush(stdout);
+					continue;
 				}
 			}
+			
+			free(packet);
+			
+			printf("before closing\n");
+			fflush(stdout);
+			
+    		// for some reason this absolute idiot is closing the file and segfault?	
+    		// error creating the file?		
 			fclose(outFile);
+			
+			printf("closed\n");
+			fflush(stdout);
 
     		break;
     	} case LlTx: {
@@ -134,23 +170,36 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
     		long int fsize = ftell(inFile);
     		
     		rewind(inFile);
-
-			unsigned char* startPacket = controlPacket(2, filename, fsize);
-            if(llwrite(startPacket, fsize + 5) < 0) {
+    		
+    		printf("file size is %li\n", fsize);
+			fflush(stdout);
+			
+			int packetLen;
+			unsigned char* startPacket = controlPacket(2, filename, fsize, &packetLen);
+			
+			printf("before startpacket\n");
+			fflush(stdout);
+			
+            if(llwrite(startPacket, packetLen) < 0) {
                 perror("tx llwrite controlstart error\n");
                 exit(-1);
             }
-    		// error opening file, tries to send whole file at once for some reason
+            
+            printf("after startpacket\n");
+			fflush(stdout);
+
 			unsigned char which = FALSE;
 			unsigned char* buffer = (unsigned char*) malloc(MAX_PAYLOAD_SIZE);
 			
 			long int i = fsize;
 			
+			
 			while(i != 0) {
 				int readNow = fread(buffer, sizeof(unsigned char), MAX_PAYLOAD_SIZE, inFile);
 				
 				int packetLen;
-				unsigned char* packet = dataPacket((int) which, buffer, readNow, &packetLen);
+				unsigned char* packet = (unsigned char*) malloc(MAX_PAYLOAD_SIZE);
+				packet = dataPacket((int) which, buffer, readNow, &packetLen);
 
 				if(llwrite(packet, packetLen) < 0) {
 					perror("tx llwrite error\n");
@@ -160,15 +209,26 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 				i -= readNow;
 				which = !which;
 			}
+			
+			free(buffer);
 
-			unsigned char* endControl = controlPacket(3, filename, fsize);
+			unsigned char* endControl = controlPacket(3, filename, fsize, &packetLen);
+			
+			printf("before controlend\n");
+			fflush(stdout);
 
-			if(llwrite(endControl, fsize + 5) < 0) { 
+			if(llwrite(endControl, packetLen) < 0) { 
                 perror("tx llwrite controlend error \n");
                 exit(-1);
             }
+            
+            printf("after controlend\n");
+			fflush(stdout);
 
             llclose(fd);
+            
+            printf("closed\n");
+			fflush(stdout);
 
             break;
     	} default: {
